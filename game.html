@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Hybrid Novel Engine</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            transition: background-color 0.5s ease;
+        }
+        #game-container {
+            width: 800px;
+            height: 450px;
+            border: 2px solid #333;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        #text-box {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            height: 120px;
+            background: rgba(0, 0, 0, 0.75);
+            border: 1px solid #555;
+            padding: 15px;
+            box-sizing: border-box;
+            font-size: 18px;
+            line-height: 1.6;
+            cursor: pointer;
+        }
+        #choices-container {
+            position: absolute;
+            top: 40%;
+            left: 0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .choice-btn {
+            background: rgba(20, 20, 30, 0.9);
+            border: 1px solid #888;
+            color: #fff;
+            padding: 10px 30px;
+            font-size: 16px;
+            min-width: 300px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .choice-btn:hover {
+            background: #fff;
+            color: #000;
+        }
+        #system-menu {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+        #system-menu button {
+            background: #222; color: #ccc; border: 1px solid #444; cursor: pointer; padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="system-menu">
+        <button onclick="saveGame()">SAVE</button>
+        <button onclick="loadGame()">LOAD</button>
+    </div>
+    <div id="choices-container"></div>
+    <div id="text-box" onclick="advanceText()">
+        <div id="text-content">Loading...</div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = "http://localhost:8080/api";
+    let masterScenario = null;
+    let currentState = {
+        currentNode: "start",
+        flags: {}
+    };
+
+    // 起動時にGoのAPIから全シナリオデータをロード
+    async function initGame() {
+        try {
+            const res = await fetch(`${API_BASE}/scenario`);
+            masterScenario = await res.json();
+            renderNode();
+        } catch (e) {
+            document.getElementById('text-content').innerText = "サーバーと通信できません。";
+        }
+    }
+
+    // 現在のノード（状態）に基づいて画面を描画
+    function renderNode() {
+        if (!masterScenario) return;
+        const node = masterScenario[currentState.currentNode];
+        
+        // 背景色の変更（演出効果）
+        document.body.style.backgroundColor = node.bg;
+        
+        // テキストの描画
+        document.getElementById('text-content').innerText = node.text;
+        
+        // 選択肢のクリアと再生成
+        const choicesDiv = document.getElementById('choices-container');
+        choicesDiv.innerHTML = '';
+        
+        if (node.choices && node.choices.length > 0) {
+            node.choices.forEach(c => {
+                const btn = document.createElement('button');
+                btn.className = 'choice-btn';
+                btn.innerText = c.text;
+                btn.onclick = () => selectChoice(c.next, c.set_flag);
+                choicesDiv.appendChild(btn);
+            });
+        }
+    }
+
+    function selectChoice(nextNode, flag) {
+        if (flag) {
+            currentState.flags[flag] = true;
+        }
+        currentState.currentNode = nextNode;
+        renderNode();
+    }
+
+    function advanceText() {
+        // 選択肢がある場合は、クリックでのテキスト強制進行を止める
+        const node = masterScenario[currentState.currentNode];
+        if (node && node.choices && node.choices.length > 0) return;
+        
+        // 選択肢がない＝エンド状態。最初に戻すなど
+        if (node && (!node.choices || node.choices.length === 0)) {
+            currentState.currentNode = "start";
+            currentState.flags = {};
+            renderNode();
+        }
+    }
+
+    // Go APIを叩いてセーブ
+    async function saveGame() {
+        await fetch(`${API_BASE}/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentState)
+        });
+        alert("状態をGoのAPIにセーブしました。");
+    }
+
+    // Go APIからロード
+    async function loadGame() {
+        const res = await fetch(`${API_BASE}/save`);
+        currentState = await res.json();
+        renderNode();
+        alert("GoのAPIから状態をロードしました。");
+    }
+
+    initGame();
+</script>
+</body>
+</html>
